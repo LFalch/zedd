@@ -6,6 +6,18 @@ pub const Lexeme = enum {
     OP_MINUS,
     OP_MULT,
     RIGHT_ARROW,
+
+    LEFT_PAREN,
+    RIGHT_PAREN,
+
+    fn precedence(lex: Lexeme) u8 {
+        switch (lex) {
+            .OP_PLUS => 1,
+            .OP_MINUS => 1,
+            .OP_MULT => 2,
+            else => unreachable,
+        }
+    }
 };
 
 pub const Token = struct {
@@ -18,6 +30,18 @@ pub const SrcLocation = struct {
     start_line: u32,
     end_col: u32,
     end_line: u32,
+
+    pub fn format(
+        self: SrcLocation,
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        _ = fmt;
+        _ = options;
+
+        try writer.print("{d}:{d}-{d}.{d}", .{ self.start_line, self.start_col, self.end_line, self.end_col });
+    }
 };
 
 pub fn srcLocation(source_code: []const u8, substring: []const u8) SrcLocation {
@@ -91,6 +115,14 @@ pub const LexStream = struct {
             },
             '*' => return .{
                 .lexeme = .OP_MULT,
+                .source = self.source_code[self.index - 1 .. self.index],
+            },
+            '(' => return .{
+                .lexeme = .LEFT_PAREN,
+                .source = self.source_code[self.index - 1 .. self.index],
+            },
+            ')' => return .{
+                .lexeme = .RIGHT_PAREN,
                 .source = self.source_code[self.index - 1 .. self.index],
             },
             '-' => {

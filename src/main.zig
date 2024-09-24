@@ -25,34 +25,42 @@ pub fn main() !void {
     defer gpa.free(source_code);
 
     var tokens = lexer.LexStream.init(source_code);
-    const expr = try parse.parse(gpa, &tokens);
+    var errors: []parse.Err = undefined;
+    const expr = try parse.parse(gpa, &tokens, &errors);
     defer expr.destroy(gpa);
+    if (errors.len > 0) {
+        defer gpa.free(errors);
+        for (errors) |err| {
+            std.debug.print("Error @ {s}:{s}: {s}\n", .{ source_file, err.location, err.err });
+        }
+    }
 
     const res = eval(expr);
-    std.debug.print("Result {d}\n", .{res});
+    std.debug.print("Result {?d}\n", .{res});
 }
 
-fn eval(e: *const parse.Expr) i64 {
+fn eval(e: *const parse.Expr) ?i64 {
     switch (e.*) {
+        .invalid => return null,
         .int_lit => |v| return v,
         .out => |ie| {
-            const i = eval(ie);
+            const i = eval(ie) orelse return null;
             std.debug.print("{d}\n", .{i});
             return i;
         },
         .add => |add| {
-            const l = eval(add.left);
-            const r = eval(add.right);
+            const l = eval(add.left) orelse return null;
+            const r = eval(add.right) orelse return null;
             return l + r;
         },
         .sub => |sub| {
-            const l = eval(sub.left);
-            const r = eval(sub.right);
+            const l = eval(sub.left) orelse return null;
+            const r = eval(sub.right) orelse return null;
             return l - r;
         },
         .mul => |mul| {
-            const l = eval(mul.left);
-            const r = eval(mul.right);
+            const l = eval(mul.left) orelse return null;
+            const r = eval(mul.right) orelse return null;
             return l * r;
         },
     }

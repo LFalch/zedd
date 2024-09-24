@@ -1,0 +1,7 @@
+Expr ->
+    LIT_INT |
+    "(" Expr ")" |
+    Expr "+" Expr |
+    Expr "-" Expr |
+    Expr "*" Expr |
+    -> Expr
