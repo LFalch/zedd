@@ -19,7 +19,7 @@ pub fn main() !void {
         var file = try std.fs.cwd().openFile(source_file, .{});
         defer file.close();
 
-        break :meow try file.readToEndAllocOptions(gpa, 1024 * 1024 * 1024, null, 1, 0);
+        break :meow try file.readToEndAlloc(gpa, 1024 * 1024 * 1024);
     };
     defer gpa.free(source_code);
 
