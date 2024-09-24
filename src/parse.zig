@@ -14,7 +14,6 @@ pub const Error = std.mem.Allocator.Error;
 
 const St = struct {
     stream: *LexStream,
-    old_token: ?Token = null,
     cur_token: ?Token,
     alloc: std.mem.Allocator,
     errors: std.ArrayListUnmanaged(Err) = .{},
@@ -24,6 +23,10 @@ const St = struct {
     fn cur_lexeme(self: *const Self) ?Lexeme {
         const cur_t = self.cur_token orelse return null;
         return cur_t.lexeme;
+    }
+    fn cur_source(self: *const Self) []const u8 {
+        const cur_t = self.cur_token orelse return "";
+        return cur_t.source;
     }
 
     fn init(alloc: std.mem.Allocator, stream: *LexStream) Self {
@@ -38,7 +41,6 @@ const St = struct {
         return try st.errors.toOwnedSlice(st.alloc);
     }
     fn next(self: *Self) void {
-        self.old_token = self.cur_token;
         self.cur_token = self.stream.nextLexeme();
     }
     fn err(self: *Self, es: []const u8) !void {
@@ -56,16 +58,23 @@ const St = struct {
             .location = location,
         });
     }
-    fn accept(ls: *Self, lexeme: ?Lexeme) bool {
+    fn accept(ls: *Self, lexeme: ?Lexeme) ?[]const u8 {
         const cur_lex = ls.cur_lexeme();
         if (cur_lex == lexeme) {
+            const cur_src = ls.cur_source();
             ls.next();
-            return true;
+            return cur_src;
         }
-        return false;
+        return null;
+    }
+    fn accept_if_prec(ls: *Self, lexeme: Lexeme, prec: u8) ?[]const u8 {
+        return if (prec <= lexeme.precedence())
+            ls.accept(lexeme)
+        else
+            null;
     }
     fn expect(ls: *Self, lexeme: ?Lexeme, err_msg: []const u8) !void {
-        if (!ls.accept(lexeme)) {
+        if (ls.accept(lexeme) == null) {
             try ls.err("unexpected symbol");
             try ls.err(err_msg);
         }
@@ -101,13 +110,13 @@ fn parse_expr(ls: *St) Error!*Expr {
 fn parse_expr_with_prec(ls: *St, prec: u8) Error!*Expr {
     var left = try parse_expr_non_left_recursive(ls);
     while (true) {
-        if (prec <= 1 and ls.accept(Lexeme.OP_PLUS)) {
+        if (ls.accept_if_prec(Lexeme.OP_PLUS, prec)) |_| {
             left = try ls.createExpr(.{ .add = .{ .left = left, .right = undefined } });
             left.add.right = try parse_expr_with_prec(ls, 1);
-        } else if (prec <= 1 and ls.accept(Lexeme.OP_MINUS)) {
+        } else if (ls.accept_if_prec(Lexeme.OP_MINUS, prec)) |_| {
             left = try ls.createExpr(.{ .sub = .{ .left = left, .right = undefined } });
             left.sub.right = try parse_expr_with_prec(ls, 1);
-        } else if (prec <= 2 and ls.accept(Lexeme.OP_MULT)) {
+        } else if (ls.accept_if_prec(Lexeme.OP_MULT, prec)) |_| {
             left = try ls.createExpr(.{ .mul = .{ .left = left, .right = undefined } });
             left.mul.right = try parse_expr_with_prec(ls, 2);
         } else break;
@@ -116,18 +125,17 @@ fn parse_expr_with_prec(ls: *St, prec: u8) Error!*Expr {
 }
 
 fn parse_expr_non_left_recursive(ls: *St) !*Expr {
-    if (ls.accept(Lexeme.INT_LIT)) {
-        const src = ls.old_token.?.source;
+    if (ls.accept(Lexeme.INT_LIT)) |src| {
         const i = std.fmt.parseInt(i64, src, 10) catch {
             try ls.err("invalid int literal");
             return try ls.invalid();
         };
         return try ls.createExpr(.{ .int_lit = i });
-    } else if (ls.accept(Lexeme.LEFT_PAREN)) {
+    } else if (ls.accept(Lexeme.LEFT_PAREN)) |_| {
         const e = try parse_expr(ls);
         try ls.expect(Lexeme.RIGHT_PAREN, "expected closing bracket");
         return e;
-    } else if (ls.accept(Lexeme.RIGHT_ARROW)) {
+    } else if (ls.accept(Lexeme.RIGHT_ARROW)) |_| {
         const e = try ls.createExpr(.{ .out = undefined });
         e.out = try parse_expr_non_left_recursive(ls);
         return e;

@@ -10,13 +10,13 @@ pub const Lexeme = enum {
     LEFT_PAREN,
     RIGHT_PAREN,
 
-    fn precedence(lex: Lexeme) ?u8 {
-        switch (lex) {
+    pub fn precedence(lex: Lexeme) u8 {
+        return switch (lex) {
             .OP_PLUS => 1,
             .OP_MINUS => 1,
             .OP_MULT => 2,
-            else => null,
-        }
+            else => unreachable,
+        };
     }
 };
 
