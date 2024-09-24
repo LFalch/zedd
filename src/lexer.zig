@@ -78,64 +78,71 @@ pub const LexStream = struct {
 
     const Self = @This();
 
+    fn getByte(self: *Self) ?u8 {
+        if (self.index >= self.source_code.len) return null;
+
+        const b = self.source_code[self.index];
+        self.index += 1;
+        return b;
+    }
+    fn rewind(self: *Self) void {
+        self.index -= 1;
+    }
+
     pub fn init(source_code: []const u8) Self {
         return .{
             .source_code = source_code,
         };
     }
     pub fn nextLexeme(self: *Self) ?Token {
-        if (self.index >= self.source_code.len) return null;
+        const start_index = self.index;
 
-        const byte = self.source_code[self.index];
-        self.index += 1;
+        const byte = self.getByte() orelse return null;
 
         if (std.ascii.isWhitespace(byte)) return self.nextLexeme();
 
         switch (byte) {
             '0'...'9' => {
-                var index = self.index;
-                while (true) {
-                    switch (self.source_code[index]) {
-                        '0'...'9' => {
-                            index += 1;
+                while (self.getByte()) |b| {
+                    switch (b) {
+                        '0'...'9' => {},
+                        else => {
+                            self.rewind();
+                            break;
                         },
-                        else => break,
                     }
                 }
-                const start = self.index - 1;
-                self.index = index;
                 return .{
                     .lexeme = .INT_LIT,
-                    .source = self.source_code[start..index],
+                    .source = self.source_code[start_index..self.index],
                 };
             },
             '+' => return .{
                 .lexeme = .OP_PLUS,
-                .source = self.source_code[self.index - 1 .. self.index],
+                .source = self.source_code[start_index..self.index],
             },
             '*' => return .{
                 .lexeme = .OP_MULT,
-                .source = self.source_code[self.index - 1 .. self.index],
+                .source = self.source_code[start_index..self.index],
             },
             '(' => return .{
                 .lexeme = .LEFT_PAREN,
-                .source = self.source_code[self.index - 1 .. self.index],
+                .source = self.source_code[start_index..self.index],
             },
             ')' => return .{
                 .lexeme = .RIGHT_PAREN,
-                .source = self.source_code[self.index - 1 .. self.index],
+                .source = self.source_code[start_index..self.index],
             },
             '-' => {
-                if (self.source_code[self.index] == '>') {
-                    self.index += 1;
+                if (self.getByte() == '>') {
                     return .{
                         .lexeme = .RIGHT_ARROW,
-                        .source = self.source_code[self.index - 2 .. self.index],
+                        .source = self.source_code[start_index..self.index],
                     };
                 }
                 return .{
                     .lexeme = .OP_MINUS,
-                    .source = self.source_code[self.index - 1 .. self.index],
+                    .source = self.source_code[start_index..self.index],
                 };
             },
             else => {},
