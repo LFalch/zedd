@@ -99,17 +99,20 @@ fn parse_expr(ls: *St) Error!*Expr {
     return parse_expr_with_prec(ls, 0);
 }
 fn parse_expr_with_prec(ls: *St, prec: u8) Error!*Expr {
-    const left = try parse_expr_non_left_recursive(ls, prec);
-    if (ls.accept(Lexeme.OP_PLUS) and prec <= 1) {
-        const right = try parse_expr_with_prec(ls, 1);
-        return ls.createExpr(.{ .add = .{ .left = left, .right = right } });
-    } else if (ls.accept(Lexeme.OP_MINUS) and prec <= 1) {
-        const right = try parse_expr_with_prec(ls, 1);
-        return ls.createExpr(.{ .sub = .{ .left = left, .right = right } });
-    } else if (ls.accept(Lexeme.OP_MULT) and prec <= 2) {
-        const right = try parse_expr_with_prec(ls, 2);
-        return ls.createExpr(.{ .mul = .{ .left = left, .right = right } });
-    } else return left;
+    var left = try parse_expr_non_left_recursive(ls);
+    while (true) {
+        if (ls.accept(Lexeme.OP_PLUS) and prec <= 1) {
+            const right = try parse_expr_with_prec(ls, 1);
+            left = try ls.createExpr(.{ .add = .{ .left = left, .right = right } });
+        } else if (ls.accept(Lexeme.OP_MINUS) and prec <= 1) {
+            const right = try parse_expr_with_prec(ls, 1);
+            left = try ls.createExpr(.{ .sub = .{ .left = left, .right = right } });
+        } else if (ls.accept(Lexeme.OP_MULT) and prec <= 2) {
+            const right = try parse_expr_with_prec(ls, 2);
+            left = try ls.createExpr(.{ .mul = .{ .left = left, .right = right } });
+        } else break;
+    }
+    return left;
 }
 
 fn parse_expr_non_left_recursive(ls: *St) !*Expr {
