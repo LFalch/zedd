@@ -38,9 +38,7 @@ const St = struct {
         return try st.errors.toOwnedSlice(st.alloc);
     }
     fn next(self: *Self) void {
-        if (self.cur_token) |ct| {
-            std.debug.print("nom: {any}\n", .{ct.lexeme});
-        }
+        self.old_token = self.cur_token;
         self.cur_token = self.stream.nextLexeme();
     }
     fn err(self: *Self, es: []const u8) !void {
@@ -61,17 +59,16 @@ const St = struct {
     fn accept(ls: *Self, lexeme: ?Lexeme) bool {
         const cur_lex = ls.cur_lexeme();
         if (cur_lex == lexeme) {
-            ls.old_token = ls.cur_token;
             ls.next();
             return true;
         }
         return false;
     }
-    fn expect(ls: *Self, lexeme: ?Lexeme) !bool {
-        if (ls.accept(lexeme))
-            return true;
-        try ls.err("unexpected symbol");
-        return false;
+    fn expect(ls: *Self, lexeme: ?Lexeme, err_msg: []const u8) !void {
+        if (!ls.accept(lexeme)) {
+            try ls.err("unexpected symbol");
+            try ls.err(err_msg);
+        }
     }
 
     fn createExpr(ls: *const Self, expr: Expr) !*Expr {
@@ -88,8 +85,11 @@ const St = struct {
 
 pub fn parse(alloc: std.mem.Allocator, lexemes: *lexer.LexStream, errors: *[]const Err) Error!*Expr {
     var ls = St.init(alloc, lexemes);
+
     const e = try parse_expr(&ls);
-    if (!try ls.expect(null)) try ls.err("expected end of file");
+    try ls.expect(null, "expected end of file");
+
+    // collect errors and return resulting expression
     const ret = try ls.finish();
     errors.* = ret;
     return e;
@@ -101,15 +101,15 @@ fn parse_expr(ls: *St) Error!*Expr {
 fn parse_expr_with_prec(ls: *St, prec: u8) Error!*Expr {
     var left = try parse_expr_non_left_recursive(ls);
     while (true) {
-        if (ls.accept(Lexeme.OP_PLUS) and prec <= 1) {
-            const right = try parse_expr_with_prec(ls, 1);
-            left = try ls.createExpr(.{ .add = .{ .left = left, .right = right } });
-        } else if (ls.accept(Lexeme.OP_MINUS) and prec <= 1) {
-            const right = try parse_expr_with_prec(ls, 1);
-            left = try ls.createExpr(.{ .sub = .{ .left = left, .right = right } });
-        } else if (ls.accept(Lexeme.OP_MULT) and prec <= 2) {
-            const right = try parse_expr_with_prec(ls, 2);
-            left = try ls.createExpr(.{ .mul = .{ .left = left, .right = right } });
+        if (prec <= 1 and ls.accept(Lexeme.OP_PLUS)) {
+            left = try ls.createExpr(.{ .add = .{ .left = left, .right = undefined } });
+            left.add.right = try parse_expr_with_prec(ls, 1);
+        } else if (prec <= 1 and ls.accept(Lexeme.OP_MINUS)) {
+            left = try ls.createExpr(.{ .sub = .{ .left = left, .right = undefined } });
+            left.sub.right = try parse_expr_with_prec(ls, 1);
+        } else if (prec <= 2 and ls.accept(Lexeme.OP_MULT)) {
+            left = try ls.createExpr(.{ .mul = .{ .left = left, .right = undefined } });
+            left.mul.right = try parse_expr_with_prec(ls, 2);
         } else break;
     }
     return left;
@@ -125,12 +125,11 @@ fn parse_expr_non_left_recursive(ls: *St) !*Expr {
         return try ls.createExpr(.{ .int_lit = i });
     } else if (ls.accept(Lexeme.LEFT_PAREN)) {
         const e = try parse_expr(ls);
-        if (!try ls.expect(Lexeme.RIGHT_PAREN)) return try ls.invalid();
+        try ls.expect(Lexeme.RIGHT_PAREN, "expected closing bracket");
         return e;
     } else if (ls.accept(Lexeme.RIGHT_ARROW)) {
-        const e = try ls.alloc.create(Expr);
-        const out_e = try parse_expr_non_left_recursive(ls);
-        e.* = .{ .out = out_e };
+        const e = try ls.createExpr(.{ .out = undefined });
+        e.out = try parse_expr_non_left_recursive(ls);
         return e;
     }
     try ls.err("expected expression");
